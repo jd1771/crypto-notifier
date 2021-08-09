@@ -1,6 +1,7 @@
 import threading
 import discord
 import asyncio
+from datetime import datetime
 from coinbase.wallet.client import Client
 from coinbase.wallet.error import CoinbaseError
 from pymongo import MongoClient
@@ -48,24 +49,25 @@ def insert(dict):
 #   none -> none
 def scan_alerts():
     while(True):
-        #bprint("dsgfdg")
+        
         alert_list = collection.find({})
         for alert in alert_list:
             alert_id = alert["_id"]
             ticker = alert['ticker']
+            date = alert['date']
             target_price = float(alert['price'])
             direction = alert['direction']
             cur_pair_data = get_pair_data(ticker)
             if (direction == 'below'):
                 if (float(cur_pair_data.amount) <= target_price):
-                    collection.delete_one({"_id": ObjectId(alert_id)})
-                    
-                    asyncio.run_coroutine_threadsafe(send_message(alert), _loop)
+                   collection.delete_one({"_id": ObjectId(alert_id)})
+                    elapsed_time = datetime.now() - date
+                    asyncio.run_coroutine_threadsafe(send_message(alert,elapsed_time), _loop)
             else:
                 if (float(cur_pair_data.amount) >= target_price):
                     collection.delete_one({"_id": ObjectId(alert_id)})
-                        
-                    asyncio.run_coroutine_threadsafe(send_message(alert), _loop)
+                    elapsed_time = datetime.now() - date 
+                    asyncio.run_coroutine_threadsafe(send_message(alert,elapsed_time), _loop)
 
 
 
@@ -74,10 +76,16 @@ def scan_alerts():
 #   Send private message to user given alert
 #   dict, int -> none
 @discord_client.event
-async def send_message(alert):
+async def send_message(alert,elapsed_time):
     user = await discord_client.fetch_user(alert["user_id"])
-    output_string = "Your target point of {} has been reached for {}".format(alert["price"],alert["ticker"])
+    total_seconds = elapsed_time.total_seconds()
+    days = divmod(total_seconds,86400)
+    hours = divmod(total_seconds,3600)
+    mins = divmod(total_seconds,60)
+    output_string = "Your target point of {} for {} has been reached in {} days {} hours {} minutes {:.1f} seconds :white_check_mark:".format(alert["price"], alert["ticker"], days[0], hours[0], mins[0], mins[1])
     await user.send(output_string)
+   
+
     
 
 #   Asyc event to confirm successful bot login
@@ -148,14 +156,21 @@ async def on_message(message):
         cur_price = float(pair_data.amount)
         
         if cur_price >= input_price:
-            alert = {"user_id": message.author.id, "ticker": user_input[0].upper(), "price": input_price, "direction": "below"}
+            alert = {"user_id": message.author.id, "ticker": user_input[0].upper(), "price": input_price, "direction": "below", "date": datetime.now()}
             insert(alert)
             
         else:
-            alert = {"user_id": message.author.id, "ticker": user_input[0].upper(), "price": input_price, "direction": "above"}
+            alert = {"user_id": message.author.id, "ticker": user_input[0].upper(), "price": input_price, "direction": "above", "date": datetime.now()}
             insert(alert)
             
     elif message.content == "!help":
+        date = datetime.now()
+        
+        print(date.month)
+        print(date.day)
+        print(date.hour)
+        print(date.minute)
+        print(date.second)
         embed_msg = discord.Embed(title="COMMAND INFORMATION", color=0x00ff00)
         embed_msg.add_field(name="!price COIN-CURRENCY", value="Gets the current price of the coin-currency pair", inline=False)
         embed_msg.add_field(name="!watchlist", value="Get information about the watchlist", inline=False)
